@@ -2548,7 +2548,6 @@ private fun CalinoAppContent(pocViewModel: PocRepositoryViewModel) {
 }
 
 @Composable
-@Composable
 private fun rememberWebcalSubscriptions(
     store: calino.malinov.ski.data.repository.WebcalSubscriptionStore,
 ): List<WebcalSubscription> {
