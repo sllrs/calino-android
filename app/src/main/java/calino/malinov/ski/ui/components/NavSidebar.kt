@@ -83,6 +83,7 @@ import calino.malinov.ski.design.CalinoTypography
 import calino.malinov.ski.data.model.CalDavAccount
 import calino.malinov.ski.data.model.CalTask
 import calino.malinov.ski.data.repository.CalinoCalendar
+import calino.malinov.ski.data.model.WebcalSubscription
 import calino.malinov.ski.data.repository.CalinoSnapshot
 import calino.malinov.ski.state.LocalCalinoPreferences
 import calino.malinov.ski.ui.surfaces.PockRoute
@@ -676,7 +677,7 @@ private fun SidebarExtras(
             )
         }
     } else {
-        accounts.flatMap { account ->
+        val accountRows = accounts.flatMap { account ->
             account.calendars.map { calendar ->
                 SidebarCalendarRow(
                     accountId = account.id,
@@ -692,6 +693,17 @@ private fun SidebarExtras(
                 )
             }
         }
+        val knownIds = accountRows.map { it.calendar.id }.toSet()
+        val webcalRows = snapshot.calendars
+            .filter { WebcalSubscription.isWebcalCalendarId(it.id) }
+            .filter { it.id !in knownIds }
+            .map { calendar ->
+                SidebarCalendarRow(
+                    accountId = WebcalSubscription.AccountId,
+                    calendar = calendar,
+                )
+            }
+        accountRows + webcalRows
     }
 
     Row(

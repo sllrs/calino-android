@@ -1,0 +1,74 @@
+name: Preview APK
+
+on:
+  push:
+    branches: [feat/webcal-subscriptions]
+    tags: ['preview-webcal*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apk:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Set up Java
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+
+      - name: Add preinstalled Android SDK tools to PATH
+        run: |
+          echo "${ANDROID_HOME}/cmdline-tools/latest/bin" >> "$GITHUB_PATH"
+          echo "${ANDROID_HOME}/platform-tools" >> "$GITHUB_PATH"
+
+      - name: Install Android SDK packages
+        run: sdkmanager "platforms;android-36" "build-tools;36.0.0" "platform-tools"
+
+      - name: Restore pinned preview signing key
+        env:
+          PREVIEW_KEYSTORE_BASE64: ${{ secrets.PREVIEW_KEYSTORE_BASE64 }}
+          PREVIEW_STORE_PASSWORD: ${{ secrets.PREVIEW_STORE_PASSWORD }}
+          PREVIEW_KEY_ALIAS: ${{ secrets.PREVIEW_KEY_ALIAS }}
+          PREVIEW_KEY_PASSWORD: ${{ secrets.PREVIEW_KEY_PASSWORD }}
+        run: |
+          if [ -z "$PREVIEW_KEYSTORE_BASE64" ] || [ -z "$PREVIEW_STORE_PASSWORD" ] \
+            || [ -z "$PREVIEW_KEY_ALIAS" ] || [ -z "$PREVIEW_KEY_PASSWORD" ]; then
+            echo "Preview signing secrets are missing. Refusing to build an APK with a throwaway debug.keystore."
+            exit 1
+          fi
+          mkdir -p keystore
+          printf '%s' "$PREVIEW_KEYSTORE_BASE64" | base64 -d > keystore/calino-preview.p12
+          python3 -c 'import os; from pathlib import Path; Path("keystore/preview.keystore.properties").write_text("storeFile=calino-preview.p12\nstorePassword=%s\nkeyAlias=%s\nkeyPassword=%s\nstoreType=PKCS12\n" % (os.environ["PREVIEW_STORE_PASSWORD"], os.environ["PREVIEW_KEY_ALIAS"], os.environ["PREVIEW_KEY_PASSWORD"]))'
+
+      - name: Test and assemble debug APK
+        run: ./gradlew testDebugUnitTest assembleDebug
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: calino-webcal-debug
+          path: app/build/outputs/apk/debug/*.apk
+
+      - name: Publish Obtainium release
+        if: github.ref == 'refs/heads/feat/webcal-subscriptions' || startsWith(github.ref, 'refs/tags/preview-webcal')
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: preview-webcal
+          name: Webcal subscribe preview
+          prerelease: false
+          make_latest: true
+          files: app/build/outputs/apk/debug/*.apk
+          body: |
+            Debug APK (`calino.malinov.ski.nativeDebug`) for trying ICS / webcal
+            subscriptions. Installs beside the official 0.1.1 release, it does
+            not replace it. Signed with a pinned preview key so Obtainium can
+            update in place.
+
+            Obtainium: `https://github.com/josephsellers/calino-android`

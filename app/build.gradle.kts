@@ -19,6 +19,17 @@ val releaseKeystoreProperties = Properties().apply {
     }
 }
 
+// Preview/debug APKs for Obtainium. Same trap as the release key: a CI
+// runner's auto-generated debug.keystore is a new signature every job, and
+// the phone then refuses to update. Pin one PKCS12 under keystore/ (gitignored)
+// and inject the same file from GitHub secrets on CI.
+val previewKeystoreProperties = Properties().apply {
+    val propsFile = rootProject.file("keystore/preview.keystore.properties")
+    if (propsFile.exists()) {
+        propsFile.inputStream().use { load(it) }
+    }
+}
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -57,6 +68,15 @@ android {
                 keyPassword = releaseKeystoreProperties["keyPassword"] as String
             }
         }
+        if (previewKeystoreProperties.containsKey("storeFile")) {
+            create("preview") {
+                storeFile = rootProject.file("keystore/${previewKeystoreProperties["storeFile"]}")
+                storePassword = previewKeystoreProperties["storePassword"] as String
+                keyAlias = previewKeystoreProperties["keyAlias"] as String
+                keyPassword = previewKeystoreProperties["keyPassword"] as String
+                (previewKeystoreProperties["storeType"] as String?)?.let { storeType = it }
+            }
+        }
     }
     buildTypes {
         getByName("debug") {
@@ -64,6 +84,9 @@ android {
             // application instead of having one replace the other.
             applicationIdSuffix = ".nativeDebug"
             versionNameSuffix = "-debug"
+            if (signingConfigs.findByName("preview") != null) {
+                signingConfig = signingConfigs.getByName("preview")
+            }
         }
         getByName("release") {
             isMinifyEnabled = true
