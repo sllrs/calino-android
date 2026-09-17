@@ -54,4 +54,48 @@ class WebcalOverlayTest {
         repo.setWebcalOverlay(WebcalOverlay())
         assertTrue(repo.snapshot().events.none { it.calendarId == "webcal:1" })
     }
+
+    @Test fun `renaming a subscription does not require a re-parse`() {
+        val subscription = calino.malinov.ski.data.model.WebcalSubscription(
+            id = "abc",
+            calendarId = "webcal:abc",
+            name = "calendar.google.com",
+            color = 0xFF5B7FB5,
+            url = "https://example.com/feed.ics",
+        )
+        val event = CalEvent(
+            id = "overlay-1",
+            title = "School pickup",
+            color = 0xFF5B7FB5,
+            start = LocalDateTime.of(2026, 9, 16, 15, 0),
+            durationMinutes = 30,
+            calendarId = "webcal:abc",
+        )
+        val renamed = subscription.copy(name = "Katrina")
+        val calendars = webcalCalendars(listOf(renamed))
+        val events = webcalEvents(listOf(renamed), mapOf("abc" to listOf(event)))
+        assertEquals("Katrina", calendars.single().name)
+        assertEquals(listOf("School pickup"), events.map { it.title })
+        assertEquals(0xFF5B7FB5, events.single().color)
+    }
+
+    @Test fun `a colour change remaps existing events`() {
+        val subscription = calino.malinov.ski.data.model.WebcalSubscription(
+            id = "abc",
+            calendarId = "webcal:abc",
+            name = "Katrina",
+            color = 0xFFC2697F,
+            url = "https://example.com/feed.ics",
+        )
+        val event = CalEvent(
+            id = "overlay-1",
+            title = "School pickup",
+            color = 0xFF5B7FB5,
+            start = LocalDateTime.of(2026, 9, 16, 15, 0),
+            durationMinutes = 30,
+            calendarId = "webcal:abc",
+        )
+        val events = webcalEvents(listOf(subscription), mapOf("abc" to listOf(event)))
+        assertEquals(0xFFC2697F, events.single().color)
+    }
 }

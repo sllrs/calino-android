@@ -17,6 +17,10 @@ import kotlinx.coroutines.launch
  * Fetches ICS feeds and publishes them as read-only calendars on the live
  * repository. Cache first, network second: a cold start should paint last
  * time's events without waiting on Google.
+ *
+ * Parsed events are kept in memory. Name, colour, visibility and mute only
+ * rewrite the calendar list (and remap event colours). Re-parsing a Google
+ * dump on the UI thread is what froze the sidebar on Save.
  */
 class WebcalManager(
     private val store: WebcalSubscriptionStore,
@@ -28,8 +32,11 @@ class WebcalManager(
     private val today: () -> LocalDate = { LocalDate.now() },
     private val windowMonths: Long = 24L,
 ) {
+    /** Last successful parse per subscription id. */
+    private var parsedById: Map<String, List<CalEvent>> = emptyMap()
+
     fun restoreFromCache() {
-        publishOverlay()
+        republishParsed()
     }
 
     fun restore() {
@@ -50,14 +57,15 @@ class WebcalManager(
         )
         cache.save(subscription.id, ics)
         store.markFetched(subscription.id)
-        publishOverlay()
+        putParsed(subscription, ics)
         return subscription
     }
 
     fun remove(id: String) {
         cache.delete(id)
         store.remove(id)
-        publishOverlay()
+        parsedById = parsedById - id
+        publishMetadata()
     }
 
     suspend fun sync(id: String) {
@@ -65,7 +73,7 @@ class WebcalManager(
         val ics = fetcher.fetchIcs(subscription.url)
         cache.save(subscription.id, ics)
         store.markFetched(subscription.id)
-        publishOverlay()
+        putParsed(subscription, ics)
     }
 
     suspend fun syncDue() {
@@ -82,27 +90,27 @@ class WebcalManager(
 
     fun setVisible(id: String, visible: Boolean) {
         store.setVisible(id, visible)
-        publishOverlay()
+        publishMetadata()
     }
 
     fun setNotifyReminders(id: String, notify: Boolean) {
         store.setNotifyReminders(id, notify)
-        publishOverlay()
+        publishMetadata()
     }
 
     fun setName(id: String, name: String) {
         store.setName(id, name)
-        publishOverlay()
+        publishMetadata()
     }
 
     fun setNameByCalendarId(calendarId: String, name: String) {
         store.setNameByCalendarId(calendarId, name)
-        publishOverlay()
+        publishMetadata()
     }
 
     fun setColor(id: String, color: Long) {
         store.setColor(id, color)
-        publishOverlay()
+        publishMetadata()
     }
 
     private fun isDue(subscription: WebcalSubscription): Boolean {
@@ -111,35 +119,71 @@ class WebcalManager(
         return Instant.now().isAfter(last.plusSeconds(interval * 60L))
     }
 
-    private fun publishOverlay() {
+    private fun putParsed(subscription: WebcalSubscription, ics: String) {
+        parsedById = parsedById + (subscription.id to parseEvents(subscription, ics))
+        publishMetadata()
+    }
+
+    private fun republishParsed() {
+        val parsed = mutableMapOf<String, List<CalEvent>>()
+        store.subscriptions().forEach { subscription ->
+            val ics = cache.load(subscription.id) ?: return@forEach
+            parsed[subscription.id] = parseEvents(subscription, ics)
+        }
+        parsedById = parsed
+        publishMetadata()
+    }
+
+    private fun parseEvents(subscription: WebcalSubscription, ics: String): List<CalEvent> {
         val windowStart = today().minusMonths(windowMonths)
         val windowEnd = today().plusMonths(windowMonths)
-        val calendars = mutableListOf<CalinoCalendar>()
-        val events = mutableListOf<CalEvent>()
-        store.subscriptions().forEach { subscription ->
-            calendars += CalinoCalendar(
-                id = subscription.calendarId,
-                name = subscription.name,
+        return runCatching {
+            mapper.parse(
+                icalText = ics,
+                calendarId = subscription.calendarId,
                 color = subscription.color,
-                readOnly = true,
-                components = setOf("VEVENT"),
-                visible = subscription.visible,
-                showTasksInViews = false,
-                notifyReminders = subscription.notifyReminders,
-            )
-            val ics = cache.load(subscription.id) ?: return@forEach
-            val parsed = runCatching {
-                mapper.parse(
-                    icalText = ics,
-                    calendarId = subscription.calendarId,
-                    color = subscription.color,
-                    href = subscription.calendarId,
-                    windowStart = windowStart,
-                    windowEnd = windowEnd,
-                )
-            }.getOrNull() ?: return@forEach
-            events += parsed.events
-        }
-        repository.setWebcalOverlay(WebcalOverlay(calendars, events))
+                href = subscription.calendarId,
+                windowStart = windowStart,
+                windowEnd = windowEnd,
+            ).events
+        }.getOrDefault(emptyList())
+    }
+
+    private fun publishMetadata() {
+        repository.setWebcalOverlay(
+            WebcalOverlay(
+                calendars = webcalCalendars(store.subscriptions()),
+                events = webcalEvents(store.subscriptions(), parsedById),
+            ),
+        )
+    }
+}
+
+internal fun webcalCalendars(subscriptions: List<WebcalSubscription>): List<CalinoCalendar> =
+    subscriptions.map { subscription ->
+        CalinoCalendar(
+            id = subscription.calendarId,
+            name = subscription.name,
+            color = subscription.color,
+            readOnly = true,
+            components = setOf("VEVENT"),
+            visible = subscription.visible,
+            showTasksInViews = false,
+            notifyReminders = subscription.notifyReminders,
+        )
+    }
+
+/** Reuses the last parse; only colour is rewritten when the subscription colour changed. */
+internal fun webcalEvents(
+    subscriptions: List<WebcalSubscription>,
+    parsedById: Map<String, List<CalEvent>>,
+): List<CalEvent> {
+    val byId = subscriptions.associateBy { it.id }
+    return subscriptions.flatMap { subscription ->
+        val events = parsedById[subscription.id] ?: return@flatMap emptyList()
+        if (events.firstOrNull()?.color == subscription.color) events
+        else events.map { it.copy(color = subscription.color) }
+    }.filter { event ->
+        byId.values.any { it.calendarId == event.calendarId }
     }
 }
