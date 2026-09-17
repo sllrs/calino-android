@@ -23,6 +23,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -44,7 +45,9 @@ import calino.malinov.ski.design.CalinoTypography
 import calino.malinov.ski.ui.components.BottomDetailCard
 import calino.malinov.ski.ui.components.CalinoTextField
 import calino.malinov.ski.ui.components.EditorSection
+import calino.malinov.ski.design.CalinoMotion
 import calino.malinov.ski.ui.components.calinoPressable
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 private val WebcalColors = listOf(
@@ -57,16 +60,34 @@ private val WebcalColors = listOf(
 
 @Composable
 fun WebcalSubscribeSheet(
-    visible: Boolean,
     onDismiss: () -> Unit,
     onSubscribe: suspend (WebcalForm) -> Unit,
 ) {
-    var form by remember(visible) { mutableStateOf(WebcalForm()) }
+    var form by remember { mutableStateOf(WebcalForm()) }
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
+    // Same exit handshake as AddCalDavAccountSheet: stay composed until the
+    // card has animated out, then unmount from Settings.
+    var shown by remember { mutableStateOf(true) }
+    var closing by remember { mutableStateOf(false) }
+    var pendingClose by remember { mutableStateOf<(() -> Unit)?>(null) }
+    val closeAfterAnimation: (() -> Unit) -> Unit = { action ->
+        if (!closing) {
+            closing = true
+            pendingClose = action
+            shown = false
+        }
+    }
+    LaunchedEffect(closing) {
+        if (closing) {
+            delay(CalinoMotion.SurfaceFadeMillis.toLong())
+            pendingClose?.invoke()
+        }
+    }
+    val dismiss: () -> Unit = { closeAfterAnimation(onDismiss) }
 
-    BottomDetailCard(visible = visible, onDismiss = onDismiss) { cardModifier ->
+    BottomDetailCard(visible = shown, onDismiss = dismiss) { cardModifier ->
         Column(cardModifier.fillMaxSize()) {
             Text(
                 "Subscribe to calendar",
@@ -173,7 +194,7 @@ fun WebcalSubscribeSheet(
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                TextButton(onClick = onDismiss, enabled = !busy) { Text("Cancel") }
+                TextButton(onClick = dismiss, enabled = !busy) { Text("Cancel") }
                 Spacer(Modifier.weight(1f))
                 Button(
                     onClick = {
@@ -181,7 +202,7 @@ fun WebcalSubscribeSheet(
                             busy = true
                             error = null
                             runCatching { onSubscribe(form) }
-                                .onSuccess { onDismiss() }
+                                .onSuccess { dismiss() }
                                 .onFailure { error = it.message ?: "Could not subscribe." }
                             busy = false
                         }

@@ -336,11 +336,15 @@ fun SettingsSurface(
                 pager(Modifier.weight(1f).fillMaxWidth())
             }
         }
-        WebcalSubscribeSheet(
-            visible = subscribeOpen,
-            onDismiss = { subscribeOpen = false },
-            onSubscribe = onSubscribeWebcal,
-        )
+        // Only compose the sheet while it is open. BottomDetailCard's host is a
+        // full-window overlay; leaving it mounted with visible=false still
+        // intercepts every tap on Settings.
+        if (subscribeOpen) {
+            WebcalSubscribeSheet(
+                onDismiss = { subscribeOpen = false },
+                onSubscribe = onSubscribeWebcal,
+            )
+        }
     }
 }
 
