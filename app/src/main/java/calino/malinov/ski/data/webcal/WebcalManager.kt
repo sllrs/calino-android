@@ -95,6 +95,11 @@ class WebcalManager(
         publishOverlay()
     }
 
+    fun setNameByCalendarId(calendarId: String, name: String) {
+        store.setNameByCalendarId(calendarId, name)
+        publishOverlay()
+    }
+
     fun setColor(id: String, color: Long) {
         store.setColor(id, color)
         publishOverlay()

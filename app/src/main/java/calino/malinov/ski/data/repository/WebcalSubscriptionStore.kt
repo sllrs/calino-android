@@ -96,6 +96,10 @@ class WebcalSubscriptionStore(
         update { list -> list.map { if (it.id == id) it.copy(name = trimmed) else it } }
     }
 
+    fun setNameByCalendarId(calendarId: String, name: String) {
+        findByCalendarId(calendarId)?.let { setName(it.id, name) }
+    }
+
     fun setColor(id: String, color: Long) {
         update { list -> list.map { if (it.id == id) it.copy(color = color) else it } }
     }

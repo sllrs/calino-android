@@ -620,6 +620,9 @@ class PocRepositoryViewModel(application: Application) : AndroidViewModel(applic
 
     fun onWebcalRenamed(id: String, name: String) = container.onWebcalRenamed(id, name)
 
+    fun onWebcalRenamedByCalendarId(calendarId: String, name: String) =
+        container.onWebcalRenamedByCalendarId(calendarId, name)
+
     fun onWebcalColorChanged(id: String, color: Long) = container.onWebcalColorChanged(id, color)
 
     fun syncWebcal(id: String) {
@@ -2341,10 +2344,10 @@ private fun CalinoAppContent(pocViewModel: PocRepositoryViewModel) {
                 fixtureHiddenTaskCalendarIds = if (visible) fixtureHiddenTaskCalendarIds - calendarId else fixtureHiddenTaskCalendarIds + calendarId
             },
             onRenameCalendar = { accountId, calendarId, name ->
-                if (accountId == WebcalSubscription.AccountId) {
-                    pocViewModel.webcalStore.findByCalendarId(calendarId)?.let {
-                        pocViewModel.onWebcalRenamed(it.id, name)
-                    }
+                if (accountId == WebcalSubscription.AccountId ||
+                    WebcalSubscription.isWebcalCalendarId(calendarId)
+                ) {
+                    pocViewModel.onWebcalRenamedByCalendarId(calendarId, name)
                 } else {
                     pocViewModel.onCalendarRenamed(accountId, calendarId, name)
                 }

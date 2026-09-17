@@ -320,6 +320,9 @@ class CalinoContainer private constructor(context: Context) {
 
     fun onWebcalRenamed(id: String, name: String) = webcal.setName(id, name)
 
+    fun onWebcalRenamedByCalendarId(calendarId: String, name: String) =
+        webcal.setNameByCalendarId(calendarId, name)
+
     fun onWebcalColorChanged(id: String, color: Long) = webcal.setColor(id, color)
 
     suspend fun syncWebcal(id: String) = webcal.sync(id)

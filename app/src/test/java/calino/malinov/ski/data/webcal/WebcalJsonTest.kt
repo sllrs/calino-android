@@ -31,4 +31,18 @@ class WebcalJsonTest {
         assertEquals(emptyList<WebcalSubscription>(), WebcalJson.decode(null))
         assertEquals(emptyList<WebcalSubscription>(), WebcalJson.decode(""))
     }
+
+    @Test fun `a renamed subscription round-trips the new name`() {
+        val original = WebcalSubscription(
+            id = "abc",
+            calendarId = "webcal:abc",
+            name = "calendar.google.com",
+            color = 0xFF5B7FB5,
+            url = "https://calendar.google.com/calendar/ical/secret/basic.ics",
+        )
+        val renamed = original.copy(name = "Katrina")
+        val restored = WebcalJson.decode(WebcalJson.encode(listOf(renamed))).single()
+        assertEquals("Katrina", restored.name)
+        assertEquals("webcal:abc", restored.calendarId)
+    }
 }
